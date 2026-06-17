@@ -1000,34 +1000,49 @@ function handleMic() {
 
   recognition = new SR();
   recognition.lang = 'es-ES';
+  recognition.continuous = true;
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
 
   const micBtn       = document.getElementById('mic-btn');
   const micStatus    = document.getElementById('mic-status');
   const micTranscript= document.getElementById('mic-transcript');
+  let finalTranscript = '';
+  let silenceTimer = null;
+  const SILENCE_MS = 3000;
+
+  function resetSilenceTimer() {
+    clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(() => {
+      if (isListening) recognition.stop();
+    }, SILENCE_MS);
+  }
 
   recognition.onstart = () => {
     isListening = true;
+    finalTranscript = '';
     micBtn.classList.add('listening');
-    micStatus.textContent = 'Escuchando... (toca para detener)';
+    micStatus.textContent = 'Escuchando...';
     micTranscript.textContent = '';
     if (navigator.vibrate) navigator.vibrate(30);
+    resetSilenceTimer();
   };
 
   recognition.onresult = (e) => {
-    let interim = '', final = '';
+    resetSilenceTimer();
+    let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      if (e.results[i].isFinal) finalTranscript += e.results[i][0].transcript + ' ';
       else interim += e.results[i][0].transcript;
     }
-    micTranscript.textContent = final || interim;
+    micTranscript.textContent = (finalTranscript + interim).trim();
   };
 
   recognition.onend = () => {
+    clearTimeout(silenceTimer);
     isListening = false;
     micBtn.classList.remove('listening');
-    const text = micTranscript.textContent.trim();
+    const text = finalTranscript.trim() || micTranscript.textContent.trim();
     if (text) processFood(text);
     else micStatus.textContent = 'No se escuchó nada. Intenta de nuevo.';
   };
