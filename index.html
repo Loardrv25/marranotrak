@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#111314">
 <title>MarranoTrak</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="Logo.jpg">
+<meta name="apple-mobile-web-app-title" content="MarranoTrak">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -354,8 +357,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);
   <div id="view-setup" class="view active">
     <div class="setup-wrap">
       <div class="setup-logo">
-        <div class="logo-big"><span class="lo-cal">Marrano</span><span class="lo-trak">Trak</span></div>
-        <div class="logo-tagline">Don't be a piggy</div>
+        <img src="Logo.jpg" alt="MarranoTrak" style="width:200px;height:200px;border-radius:24px;object-fit:cover;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
       </div>
       <div class="info-box">Ingresa tus datos para calcular tu <strong>TMB (tasa metabólica basal)</strong> con precisión.</div>
       <div class="form-row">
@@ -400,9 +402,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);
   <!-- ══════════════ TODAY ══════════════ -->
   <div id="view-today" class="view">
     <div class="topbar">
-      <div>
-        <h1>Marrano<span>Trak</span></h1>
-        <div class="topbar-sub" id="today-date-label"></div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <img src="Logo.jpg" alt="MarranoTrak" style="width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;">
+        <div>
+          <h1>Marrano<span>Trak</span></h1>
+          <div class="topbar-sub" id="today-date-label"></div>
+        </div>
       </div>
     </div>
 
@@ -608,14 +613,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);
     <div class="modal-title">¿Qué deporte hiciste?</div>
     <div class="sport-options" id="sport-options"></div>
     <div class="form-group">
-      <label class="form-label">Duración</label>
+      <label class="form-label" id="dur-label">Duración</label>
       <div class="dur-row">
-        <button class="dur-btn" onclick="adjDur(-5)">−</button>
+        <button class="dur-btn" onclick="adjDur(-1)">−</button>
         <div class="dur-center">
           <div class="dur-num" id="dur-num">30</div>
-          <div class="dur-unit">minutos</div>
+          <div class="dur-unit" id="dur-unit-lbl">minutos</div>
         </div>
-        <button class="dur-btn" onclick="adjDur(5)">+</button>
+        <button class="dur-btn" onclick="adjDur(1)">+</button>
       </div>
     </div>
     <button class="btn-primary" onclick="addSport()">Agregar →</button>
@@ -633,11 +638,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);
 //  CONSTANTS
 // ════════════════════════════════════
 const SPORTS_DATA = [
-  { name:'Golf',                 icon:'⛳', met:4.0 },
-  { name:'Trotar',               icon:'🏃', met:7.0 },
-  { name:'Cross Country en Bici',icon:'🚵', met:8.5 },
-  { name:'Nadar',                icon:'🏊', met:6.0 },
-  { name:'Bici Ciudad',          icon:'🚴', met:5.0 }
+  { name:'Golf',                  icon:'⛳', met:4.0 },
+  { name:'Trotar',                icon:'🏃', met:7.0 },
+  { name:'Cross Country en Bici', icon:'🚵', met:8.5 },
+  { name:'Nadar',                 icon:'🏊', met:6.0 },
+  { name:'Bici Ciudad',           icon:'🚴', met:5.0 },
+  { name:'25 Flexiones',          icon:'💪', unit:'sets', calPerSet:12, defaultAmt:1 },
+  { name:'Bíceps Mancuernas (8)', icon:'🏋️', unit:'sets', calPerSet:5,  defaultAmt:1 }
 ];
 
 // ════════════════════════════════════
@@ -745,11 +752,12 @@ function calcStepsCal(steps) {
   return Math.round(steps * 0.04 * (w / 70));
 }
 
-function calcSportCal(sportName, mins) {
+function calcSportCal(sportName, amount) {
   const s = SPORTS_DATA.find(x => x.name === sportName);
   const w = profile?.weight || 70;
   if (!s) return 0;
-  return Math.round(s.met * w * (mins / 60));
+  if (s.unit === 'sets') return Math.round(s.calPerSet * (w / 70) * amount);
+  return Math.round(s.met * w * (amount / 60));
 }
 
 function getTodayStats() {
@@ -812,11 +820,14 @@ function renderSportList() {
   }
   el.innerHTML = today.sports.map((s, i) => {
     const sport = SPORTS_DATA.find(x => x.name === s.name) || { icon:'🏋️' };
-    const cal = calcSportCal(s.name, s.minutes);
+    const amount = s.amount ?? s.minutes ?? 0;
+    const unit   = s.unit || 'min';
+    const cal    = calcSportCal(s.name, amount);
+    const label  = unit === 'sets' ? (amount === 1 ? 'serie' : 'series') : 'min';
     return `<div class="sport-item">
       <span class="sport-ico">${sport.icon}</span>
       <span class="sport-name">${s.name}</span>
-      <span class="sport-time">${s.minutes} min</span>
+      <span class="sport-time">${amount} ${label}</span>
       <span class="sport-cal">+${cal} kcal</span>
       <button class="del-btn" onclick="deleteSport(${i})">✕</button>
     </div>`;
@@ -871,30 +882,59 @@ function promptSteps() {
 //  SPORTS MODAL
 // ════════════════════════════════════
 function openSportModal() {
-  selSportIdx = 0; durMinutes = 30;
-  document.getElementById('sport-options').innerHTML = SPORTS_DATA.map((s, i) => `
-    <div class="sport-opt ${i===0?'sel':''}" id="sopt-${i}" onclick="selectSportOpt(${i})">
+  selSportIdx = 0;
+  document.getElementById('sport-options').innerHTML = SPORTS_DATA.map((s, i) => {
+    const detail = s.unit === 'sets'
+      ? `~${s.calPerSet} kcal/serie`
+      : `MET ${s.met}`;
+    return `<div class="sport-opt ${i===0?'sel':''}" id="sopt-${i}" onclick="selectSportOpt(${i})">
       <span class="sport-opt-ico">${s.icon}</span>
       <span class="sport-opt-name">${s.name}</span>
-      <span class="sport-opt-met">MET ${s.met}</span>
-    </div>`).join('');
-  document.getElementById('dur-num').textContent = durMinutes;
+      <span class="sport-opt-met">${detail}</span>
+    </div>`;
+  }).join('');
+  setSportModalUnit(0);
   document.getElementById('sport-modal').classList.add('open');
+}
+
+function setSportModalUnit(i) {
+  const sport = SPORTS_DATA[i];
+  if (sport.unit === 'sets') {
+    durMinutes = sport.defaultAmt || 1;
+    document.getElementById('dur-label').textContent   = 'Cantidad';
+    document.getElementById('dur-unit-lbl').textContent = 'series';
+  } else {
+    durMinutes = 30;
+    document.getElementById('dur-label').textContent   = 'Duración';
+    document.getElementById('dur-unit-lbl').textContent = 'minutos';
+  }
+  document.getElementById('dur-num').textContent = durMinutes;
 }
 
 function selectSportOpt(i) {
   selSportIdx = i;
   document.querySelectorAll('.sport-opt').forEach((el, idx) => el.classList.toggle('sel', idx === i));
+  setSportModalUnit(i);
 }
 
 function adjDur(n) {
-  durMinutes = Math.max(5, Math.min(360, durMinutes + n));
+  const sport = SPORTS_DATA[selSportIdx];
+  if (sport?.unit === 'sets') {
+    durMinutes = Math.max(1, Math.min(20, durMinutes + n));
+  } else {
+    durMinutes = Math.max(5, Math.min(360, durMinutes + (n * 5)));
+  }
   document.getElementById('dur-num').textContent = durMinutes;
 }
 
 function addSport() {
   const sport = SPORTS_DATA[selSportIdx];
-  today.sports.push({ name: sport.name, minutes: durMinutes });
+  today.sports.push({
+    name:   sport.name,
+    amount: durMinutes,
+    unit:   sport.unit || 'min',
+    minutes: sport.unit === 'sets' ? undefined : durMinutes  // backward compat
+  });
   today.saved = false;
   autoSaveToday(); closeSportModal(); renderToday();
   toast('🏃 ' + sport.name + ' agregado');
@@ -1207,6 +1247,26 @@ function resetAll() {
 
 document.getElementById('sport-modal').addEventListener('click', function(e) {
   if (e.target === this) closeSportModal();
+});
+
+// ── PWA: Service Worker ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+
+// ── PWA: Install prompt (Android Chrome) ──
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  // Show a small install banner after 3 seconds if not already installed
+  setTimeout(() => {
+    if (deferredInstallPrompt) {
+      toast('💾 Instala el app — toca el menú del browser');
+    }
+  }, 3000);
 });
 
 init();

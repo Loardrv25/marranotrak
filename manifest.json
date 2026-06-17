@@ -1,0 +1,25 @@
+{
+  "name": "MarranoTrak",
+  "short_name": "MarranoTrak",
+  "description": "Don't be a piggy",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111314",
+  "theme_color": "#111314",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "Logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "Logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ]
+}
