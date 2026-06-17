@@ -348,6 +348,22 @@ html,body{height:100%;background:var(--bg);color:var(--text);
 /* ── SECTION LABEL ── */
 .section-lbl{font-size:10px;font-weight:700;letter-spacing:2px;
   text-transform:uppercase;color:var(--text3);padding:6px 14px 0;margin-bottom:-4px;}
+
+/* ── DATE SELECTOR ── */
+.date-selector{display:flex;gap:7px;overflow-x:auto;padding:10px 14px 0;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+.date-selector::-webkit-scrollbar{display:none;}
+.date-chip{flex-shrink:0;padding:6px 14px;border-radius:100px;
+  border:1px solid var(--brd2);background:var(--bg2);
+  font-size:11px;font-weight:700;color:var(--text2);cursor:pointer;
+  font-family:'Exo 2',sans-serif;letter-spacing:.3px;
+  transition:background .12s,border-color .12s,color .12s;}
+.date-chip.active{background:var(--ge);border-color:var(--gc);color:var(--ga);}
+.date-chip:active{opacity:.7;}
+
+/* ── SLOGAN ── */
+.topbar-slogan{font-size:10px;font-weight:700;letter-spacing:2px;
+  text-transform:uppercase;color:var(--gd);margin-top:1px;}
 </style>
 </head>
 <body>
@@ -407,9 +423,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);
         <div>
           <h1>Marrano<span>Trak</span></h1>
           <div class="topbar-sub" id="today-date-label"></div>
+          <div class="topbar-slogan">Don't be a piggy</div>
         </div>
       </div>
     </div>
+    <div class="date-selector" id="date-selector"></div>
 
     <div class="summary" id="summary-card">
       <div class="ring-wrap">
@@ -638,21 +656,21 @@ html,body{height:100%;background:var(--bg);color:var(--text);
 //  CONSTANTS
 // ════════════════════════════════════
 const SPORTS_DATA = [
-  { name:'Golf',                  icon:'⛳', met:4.0 },
-  { name:'Trotar',                icon:'🏃', met:7.0 },
-  { name:'Cross Country en Bici', icon:'🚵', met:8.5 },
-  { name:'Nadar',                 icon:'🏊', met:6.0 },
-  { name:'Bici Ciudad',           icon:'🚴', met:5.0 },
-  { name:'25 Flexiones',          icon:'💪', unit:'sets', calPerSet:12, defaultAmt:1 },
-  { name:'Bíceps Mancuernas (8)', icon:'🏋️', unit:'sets', calPerSet:5,  defaultAmt:1 }
+  { name:'Golf',                  icon:'⛳', unit:'min',  met:4.0,        defaultAmt:60  },
+  { name:'Trotar',                icon:'🏃', unit:'km',   calPer70kg:70,  defaultAmt:5,  step:0.5 },
+  { name:'Cross Country en Bici', icon:'🚵', unit:'km',   calPer70kg:35,  defaultAmt:10, step:1   },
+  { name:'Nadar',                 icon:'🏊', unit:'km',   calPer70kg:50,  defaultAmt:1,  step:0.1 },
+  { name:'Bici Ciudad',           icon:'🚴', unit:'km',   calPer70kg:25,  defaultAmt:10, step:1   },
+  { name:'25 Flexiones',          icon:'💪', unit:'sets', calPerSet:12,   defaultAmt:1  },
+  { name:'Bíceps Mancuernas (8)', icon:'🏋️', unit:'sets', calPerSet:5,    defaultAmt:1  }
 ];
 
 // ════════════════════════════════════
 //  STATE
 // ════════════════════════════════════
-let profile     = JSON.parse(localStorage.getItem('ct_profile')  || 'null');
-let history     = JSON.parse(localStorage.getItem('ct_history')  || '[]');
-let today       = JSON.parse(localStorage.getItem('ct_today')    || 'null');
+let profile     = JSON.parse(localStorage.getItem('ct_profile') || 'null');
+let history     = JSON.parse(localStorage.getItem('ct_history') || '[]');
+let entries     = JSON.parse(localStorage.getItem('ct_entries') || '{}');
 let selGender   = 'male';
 let selPGender  = 'male';
 let selSportIdx = 0;
@@ -662,9 +680,18 @@ let isListening = false;
 let isProcessing= false;
 
 const todayISO = new Date().toISOString().split('T')[0];
-if (!today || today.date !== todayISO) {
-  today = { date: todayISO, steps: 0, sports: [], foods: [], saved: false };
+
+// Migrate old ct_today format
+const _old = JSON.parse(localStorage.getItem('ct_today') || 'null');
+if (_old && !entries[_old.date]) entries[_old.date] = _old;
+
+if (!entries[todayISO]) {
+  entries[todayISO] = { date: todayISO, steps: 0, sports: [], foods: [], saved: false };
 }
+
+let editingDate  = todayISO;
+let currentEntry = entries[editingDate];
+let today        = currentEntry; // alias so old code keeps working
 
 // ════════════════════════════════════
 //  API KEY
@@ -755,15 +782,16 @@ function calcStepsCal(steps) {
 function calcSportCal(sportName, amount) {
   const s = SPORTS_DATA.find(x => x.name === sportName);
   const w = profile?.weight || 70;
-  if (!s) return 0;
+  if (!s || amount == null || isNaN(amount)) return 0;
   if (s.unit === 'sets') return Math.round(s.calPerSet * (w / 70) * amount);
+  if (s.unit === 'km')   return Math.round(s.calPer70kg * (w / 70) * amount);
   return Math.round(s.met * w * (amount / 60));
 }
 
 function getTodayStats() {
   const bmr       = calcBMR();
   const stepsCal  = calcStepsCal(today.steps);
-  const sportsCal = today.sports.reduce((s, x) => s + calcSportCal(x.name, x.minutes), 0);
+  const sportsCal = today.sports.reduce((s, x) => s + calcSportCal(x.name, x.amount ?? x.minutes ?? 0), 0);
   const burned    = bmr + stepsCal + sportsCal;
   const consumed  = today.foods.reduce((s, f) => s + f.calories, 0);
   const balance   = consumed - burned;
@@ -774,9 +802,10 @@ function getTodayStats() {
 //  TODAY RENDER
 // ════════════════════════════════════
 function renderToday() {
-  const d = new Date();
+  const d = new Date(editingDate + 'T12:00:00');
   document.getElementById('today-date-label').textContent =
     d.toLocaleDateString('es', { weekday:'long', day:'numeric', month:'long' });
+  renderDateSelector();
   const stats = getTodayStats();
   updateSummary(stats);
   renderSteps();
@@ -823,7 +852,8 @@ function renderSportList() {
     const amount = s.amount ?? s.minutes ?? 0;
     const unit   = s.unit || 'min';
     const cal    = calcSportCal(s.name, amount);
-    const label  = unit === 'sets' ? (amount === 1 ? 'serie' : 'series') : 'min';
+    const label  = unit === 'sets' ? (amount === 1 ? 'serie' : 'series')
+                 : unit === 'km'   ? 'km' : 'min';
     return `<div class="sport-item">
       <span class="sport-ico">${sport.icon}</span>
       <span class="sport-name">${s.name}</span>
@@ -867,14 +897,14 @@ function updateSaveBtn() {
 // ════════════════════════════════════
 function addSteps(n) {
   today.steps = Math.max(0, today.steps + n);
-  autoSaveToday(); renderToday();
+  autoSaveEntry(); renderToday();
 }
 
 function promptSteps() {
   const v = prompt('Número de pasos:', today.steps);
   if (v !== null) {
     const n = parseInt(v);
-    if (!isNaN(n) && n >= 0) { today.steps = n; autoSaveToday(); renderToday(); }
+    if (!isNaN(n) && n >= 0) { today.steps = n; autoSaveEntry(); renderToday(); }
   }
 }
 
@@ -884,9 +914,9 @@ function promptSteps() {
 function openSportModal() {
   selSportIdx = 0;
   document.getElementById('sport-options').innerHTML = SPORTS_DATA.map((s, i) => {
-    const detail = s.unit === 'sets'
-      ? `~${s.calPerSet} kcal/serie`
-      : `MET ${s.met}`;
+    const detail = s.unit === 'sets' ? `~${s.calPerSet} kcal/serie`
+                 : s.unit === 'km'   ? `~${s.calPer70kg} kcal/km`
+                 : `MET ${s.met}`;
     return `<div class="sport-opt ${i===0?'sel':''}" id="sopt-${i}" onclick="selectSportOpt(${i})">
       <span class="sport-opt-ico">${s.icon}</span>
       <span class="sport-opt-name">${s.name}</span>
@@ -901,11 +931,15 @@ function setSportModalUnit(i) {
   const sport = SPORTS_DATA[i];
   if (sport.unit === 'sets') {
     durMinutes = sport.defaultAmt || 1;
-    document.getElementById('dur-label').textContent   = 'Cantidad';
+    document.getElementById('dur-label').textContent    = 'Cantidad';
     document.getElementById('dur-unit-lbl').textContent = 'series';
+  } else if (sport.unit === 'km') {
+    durMinutes = sport.defaultAmt || 5;
+    document.getElementById('dur-label').textContent    = 'Distancia';
+    document.getElementById('dur-unit-lbl').textContent = 'km';
   } else {
-    durMinutes = 30;
-    document.getElementById('dur-label').textContent   = 'Duración';
+    durMinutes = sport.defaultAmt || 30;
+    document.getElementById('dur-label').textContent    = 'Duración';
     document.getElementById('dur-unit-lbl').textContent = 'minutos';
   }
   document.getElementById('dur-num').textContent = durMinutes;
@@ -921,6 +955,9 @@ function adjDur(n) {
   const sport = SPORTS_DATA[selSportIdx];
   if (sport?.unit === 'sets') {
     durMinutes = Math.max(1, Math.min(20, durMinutes + n));
+  } else if (sport?.unit === 'km') {
+    const step = sport.step || 0.5;
+    durMinutes = Math.round((Math.max(step, Math.min(200, durMinutes + n * step))) * 10) / 10;
   } else {
     durMinutes = Math.max(5, Math.min(360, durMinutes + (n * 5)));
   }
@@ -936,12 +973,12 @@ function addSport() {
     minutes: sport.unit === 'sets' ? undefined : durMinutes  // backward compat
   });
   today.saved = false;
-  autoSaveToday(); closeSportModal(); renderToday();
+  autoSaveEntry(); closeSportModal(); renderToday();
   toast('🏃 ' + sport.name + ' agregado');
 }
 
 function closeSportModal() { document.getElementById('sport-modal').classList.remove('open'); }
-function deleteSport(i)    { today.sports.splice(i,1); today.saved=false; autoSaveToday(); renderToday(); }
+function deleteSport(i)    { today.sports.splice(i,1); today.saved=false; autoSaveEntry(); renderToday(); }
 
 // ════════════════════════════════════
 //  VOICE / FOOD
@@ -1068,7 +1105,7 @@ Usa porciones típicas, sé preciso con las calorías según el peso de la perso
         name: f.name, portion: f.portion || '', calories: Math.round(f.calories)
       }));
       today.saved = false;
-      autoSaveToday(); renderToday();
+      autoSaveEntry(); renderToday();
       micStatus.textContent = `✓ ${parsed.foods.length} alimentos · ${parsed.totalCalories} kcal`;
       document.getElementById('mic-transcript').textContent = '';
       document.getElementById('food-text').value = '';
@@ -1093,7 +1130,7 @@ Usa porciones típicas, sé preciso con las calorías según el peso de la perso
   }
 }
 
-function deleteFood(i) { today.foods.splice(i,1); today.saved=false; autoSaveToday(); renderToday(); }
+function deleteFood(i) { today.foods.splice(i,1); today.saved=false; autoSaveEntry(); renderToday(); }
 
 // ════════════════════════════════════
 //  SAVE DAY
@@ -1111,12 +1148,45 @@ function saveDay() {
   if (idx >= 0) history[idx] = record; else history.unshift(record);
   today.saved = true;
   localStorage.setItem('ct_history', JSON.stringify(history));
-  autoSaveToday(); updateSaveBtn(); renderHistory();
+  autoSaveEntry(); updateSaveBtn(); renderHistory();
   toast('✓ Día guardado');
   if (navigator.vibrate) navigator.vibrate([40,30,80]);
 }
 
-function autoSaveToday() { localStorage.setItem('ct_today', JSON.stringify(today)); }
+function autoSaveEntry() {
+  entries[editingDate] = currentEntry;
+  localStorage.setItem('ct_entries', JSON.stringify(entries));
+  // keep legacy key in sync for safety
+  if (editingDate === todayISO) localStorage.setItem('ct_today', JSON.stringify(currentEntry));
+}
+
+function loadEntry(dateISO) {
+  autoSaveEntry(); // save current before switching
+  editingDate = dateISO;
+  if (!entries[dateISO]) {
+    entries[dateISO] = { date: dateISO, steps: 0, sports: [], foods: [], saved: false };
+  }
+  currentEntry = entries[dateISO];
+  today = currentEntry;
+  renderToday();
+}
+
+function renderDateSelector() {
+  const el = document.getElementById('date-selector');
+  if (!el) return;
+  const chips = [];
+  for (let i = 0; i <= 5; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const iso   = d.toISOString().split('T')[0];
+    const label = i === 0 ? 'Hoy'
+                : i === 1 ? 'Ayer'
+                : d.toLocaleDateString('es', { weekday:'short', day:'numeric' });
+    const active = iso === editingDate ? ' active' : '';
+    chips.push(`<button class="date-chip${active}" onclick="loadEntry('${iso}')">${label}</button>`);
+  }
+  el.innerHTML = chips.join('');
+}
 
 // ════════════════════════════════════
 //  HISTORY
