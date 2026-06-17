@@ -1206,6 +1206,85 @@ function renderDateSelector() {
 // ════════════════════════════════════
 //  HISTORY
 // ════════════════════════════════════
+function renderBalanceChart(sorted) {
+  // sorted: oldest → newest
+  if (sorted.length < 2) return '';
+
+  const W = 340, H = 175;
+  const padL = 50, padR = 10, padT = 14, padB = 32;
+  const chartW = W - padL - padR;
+  const chartH = H - padT - padB;
+
+  const balances = sorted.map(d => d.balance);
+  // ensure zero is always visible with some padding
+  const maxVal = Math.max(...balances, 300);
+  const minVal = Math.min(...balances, -300);
+  const range  = maxVal - minVal || 1;
+
+  const toY = v => padT + (1 - (v - minVal) / range) * chartH;
+  const toX = i => padL + (i / Math.max(sorted.length - 1, 1)) * chartW;
+
+  const y0  = toY(0);
+  const pts = sorted.map((d, i) => [toX(i), toY(d.balance)]);
+
+  // Build line path
+  const lineD = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+
+  // Area polygon to zero line
+  const areaD = lineD
+    + ` L${pts.at(-1)[0].toFixed(1)},${y0.toFixed(1)}`
+    + ` L${pts[0][0].toFixed(1)},${y0.toFixed(1)} Z`;
+
+  // Colored dots per day
+  const dots = sorted.map((d, i) => {
+    const [x, y] = pts[i];
+    const c = d.balance < 0 ? '#3db870' : '#e04f5f';
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="${c}" stroke="#1b1d1f" stroke-width="1.5"/>`;
+  }).join('');
+
+  // X labels — show up to 6 evenly spaced
+  const step = Math.ceil(sorted.length / 6);
+  const xLabels = sorted.map((d, i) => {
+    if (i % step !== 0 && i !== sorted.length - 1) return '';
+    const dt  = new Date(d.date + 'T12:00:00');
+    const lbl = dt.toLocaleDateString('es', { day: 'numeric', month: 'short' });
+    return `<text x="${toX(i).toFixed(1)}" y="${H - 7}" text-anchor="middle"
+      font-size="8.5" fill="#4a5059" font-family="Exo 2,sans-serif">${lbl}</text>`;
+  }).join('');
+
+  // Y labels: min, 0, max
+  const yTicks = [
+    { v: minVal, lbl: Math.round(minVal).toLocaleString() },
+    { v: 0,      lbl: '0' },
+    { v: maxVal, lbl: '+' + Math.round(maxVal).toLocaleString() }
+  ];
+  const yLabels = yTicks.map(({ v, lbl }) => {
+    const y = toY(v);
+    const c = v < 0 ? '#3db870' : v > 0 ? '#e04f5f' : '#4a5059';
+    return `<text x="${padL - 5}" y="${(y + 3).toFixed(1)}" text-anchor="end"
+      font-size="8" fill="${c}" font-family="Exo 2,sans-serif">${lbl}</text>`;
+  }).join('');
+
+  // Determine area color by average
+  const avg = balances.reduce((a, b) => a + b, 0) / balances.length;
+  const areaFill  = avg <= 0 ? 'rgba(30,140,78,0.13)' : 'rgba(224,79,95,0.13)';
+  const lineColor = avg <= 0 ? '#3db870' : '#e04f5f';
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible;">
+    <!-- grid line at zero -->
+    <line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W - padR}" y2="${y0.toFixed(1)}"
+      stroke="#303538" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <!-- area fill -->
+    <path d="${areaD}" fill="${areaFill}"/>
+    <!-- main line -->
+    <path d="${lineD}" fill="none" stroke="${lineColor}" stroke-width="2"
+      stroke-linejoin="round" stroke-linecap="round"/>
+    ${yLabels}
+    ${xLabels}
+    ${dots}
+  </svg>`;
+}
+
 function renderHistory() {
   const list = document.getElementById('hist-list');
   if (history.length === 0) {
@@ -1219,7 +1298,8 @@ function renderHistory() {
     return;
   }
 
-  const cumulative = history.reduce((s, d) => s + d.balance, 0);
+  // Cumulative total (sum all saved days)
+  const cumulative  = history.reduce((s, d) => s + d.balance, 0);
   const cumuEl = document.getElementById('cumu-val');
   cumuEl.textContent = (cumulative > 0 ? '+' : '') + cumulative.toLocaleString() + ' kcal';
   cumuEl.style.color = cumulative > 0 ? 'var(--red)' : 'var(--gb)';
@@ -1228,10 +1308,24 @@ function renderHistory() {
   document.getElementById('cumu-sub').textContent =
     `${history.length} días registrados · ${deficitDays} en déficit`;
 
-  list.innerHTML = history.map(d => {
+  // Chart (oldest → newest)
+  const sorted = [...history].reverse();
+  const chart = history.length >= 2 ? `
+    <div class="card" style="padding:16px 10px 12px;">
+      <div class="card-title">📊 Balance por día</div>
+      <div style="display:flex;gap:14px;margin-bottom:12px;padding:0 4px;">
+        <span style="font-size:11px;color:var(--gb);font-weight:700;">● Déficit</span>
+        <span style="font-size:11px;color:var(--red);font-weight:700;">● Superávit</span>
+        <span style="font-size:11px;color:var(--text3);margin-left:auto;">0 = equilibrio</span>
+      </div>
+      ${renderBalanceChart(sorted)}
+    </div>` : '';
+
+  // Day entries (newest first)
+  const items = history.map(d => {
     const date      = new Date(d.date + 'T12:00:00');
     const day       = date.getDate();
-    const month     = date.toLocaleDateString('es', { month:'short' });
+    const month     = date.toLocaleDateString('es', { month: 'short' });
     const isDeficit = d.balance < 0;
     const abs       = Math.abs(d.balance);
     return `<div class="hist-item">
@@ -1249,6 +1343,8 @@ function renderHistory() {
       </div>
     </div>`;
   }).join('');
+
+  list.innerHTML = chart + items;
 }
 
 // ════════════════════════════════════
