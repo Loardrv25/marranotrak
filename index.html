@@ -951,12 +951,26 @@ function toggleFoodStar(name) {
 }
 
 function getFavsList() {
-  return favorites
-    .filter(f => f.starred || (f.count || 1) >= 2)
-    .sort((a, b) => {
-      if (a.starred !== b.starred) return a.starred ? -1 : 1;
-      return (b.count || 1) - (a.count || 1);
-    });
+  // Combos always before individuals; within each section, array order = user order
+  const eligible = favorites.filter(f => f.starred || (f.count || 1) >= 2);
+  return [
+    ...eligible.filter(f =>  f.isGroup),
+    ...eligible.filter(f => !f.isGroup)
+  ];
+}
+
+function moveFav(displayIdx, dir) {
+  const list = getFavsList();
+  const target = list[displayIdx + dir];
+  const current = list[displayIdx];
+  if (!target || !current) return;
+  // Only swap within same section (combos ↔ combos, singles ↔ singles)
+  if (!!current.isGroup !== !!target.isGroup) return;
+  const iA = favorites.indexOf(current);
+  const iB = favorites.indexOf(target);
+  [favorites[iA], favorites[iB]] = [favorites[iB], favorites[iA]];
+  saveFavorites();
+  renderFavorites();
 }
 
 function renderFavorites() {
@@ -968,23 +982,68 @@ function renderFavorites() {
       Aún no hay favoritos.<br>Come un alimento 2+ veces o toca ★ para fijarlo.</div>`;
     return;
   }
-  el.innerHTML = list.map((f, i) => {
-    const starColor  = f.starred ? '#f5c518' : 'var(--text3)';
-    const groupBadge = f.isGroup
-      ? `<span style="font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text3);background:var(--bg3);border-radius:4px;padding:1px 5px;margin-left:5px;">combo</span>`
-      : '';
-    const sub = f.isGroup
-      ? `${f.calories} kcal total${f.count >= 2 ? ` · ${f.count}× comido` : ''}`
-      : `${escHtml(f.portion)} · ${f.calories} kcal${f.count >= 2 ? ` · ${f.count}× comido` : ''}`;
-    return `<div style="display:flex;align-items:center;gap:9px;background:var(--bg2);border-radius:var(--rs);padding:10px 12px;margin-bottom:6px;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:600;display:flex;align-items:center;flex-wrap:wrap;gap:2px;">${escHtml(f.name)}${groupBadge}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${sub}</div>
-      </div>
-      <button onclick="toggleFavStar(${i})" style="background:none;border:none;font-size:19px;color:${starColor};cursor:pointer;padding:2px 4px;line-height:1;flex-shrink:0;">${f.starred ? '★' : '☆'}</button>
-      <button onclick="addFavToDay(${i})" style="background:var(--ge);border:1px solid var(--gd);border-radius:8px;color:var(--gb);font-size:12px;font-weight:700;padding:6px 11px;cursor:pointer;font-family:'Exo 2',sans-serif;white-space:nowrap;flex-shrink:0;">+ Agregar</button>
-    </div>`;
-  }).join('');
+
+  const combos  = list.filter(f =>  f.isGroup);
+  const singles = list.filter(f => !f.isGroup);
+
+  function renderSection(items, startIdx) {
+    return items.map((f, si) => {
+      const i         = startIdx + si;
+      const starColor = f.starred ? '#f5c518' : 'var(--text3)';
+      const badge     = f.isGroup
+        ? `<span style="font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+             color:var(--text3);background:var(--bg3);border-radius:4px;padding:1px 5px;margin-left:4px;">combo</span>`
+        : '';
+      const sub = f.isGroup
+        ? `${f.calories} kcal total${f.count >= 2 ? ` · ${f.count}× comido` : ''}`
+        : `${escHtml(f.portion)} · ${f.calories} kcal${f.count >= 2 ? ` · ${f.count}× comido` : ''}`;
+      const canUp   = si > 0;
+      const canDown = si < items.length - 1;
+      const arrowStyle = `background:none;border:none;font-size:13px;cursor:pointer;padding:0;line-height:1;font-family:sans-serif;`;
+      return `<div style="display:flex;align-items:center;gap:8px;background:var(--bg2);
+                border-radius:var(--rs);padding:10px 10px;margin-bottom:6px;">
+        <!-- reorder arrows -->
+        <div style="display:flex;flex-direction:column;gap:1px;flex-shrink:0;">
+          <button onclick="moveFav(${i},-1)" ${canUp ? '' : 'disabled'}
+            style="${arrowStyle}color:${canUp ? 'var(--text2)' : 'var(--text3)'};">▲</button>
+          <button onclick="moveFav(${i}, 1)" ${canDown ? '' : 'disabled'}
+            style="${arrowStyle}color:${canDown ? 'var(--text2)' : 'var(--text3)'};">▼</button>
+        </div>
+        <!-- info -->
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;display:flex;align-items:center;flex-wrap:wrap;gap:2px;">
+            ${escHtml(f.name)}${badge}
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-top:1px;">${sub}</div>
+        </div>
+        <!-- star -->
+        <button onclick="toggleFavStar(${i})"
+          style="background:none;border:none;font-size:19px;color:${starColor};cursor:pointer;padding:2px;flex-shrink:0;">
+          ${f.starred ? '★' : '☆'}</button>
+        <!-- add -->
+        <button onclick="addFavToDay(${i})"
+          style="background:var(--ge);border:1px solid var(--gd);border-radius:8px;color:var(--gb);
+                 font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer;
+                 font-family:'Exo 2',sans-serif;white-space:nowrap;flex-shrink:0;">+ Agregar</button>
+      </div>`;
+    }).join('');
+  }
+
+  const sectionLabel = (txt) =>
+    `<div style="font-size:9px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;
+       color:var(--text3);padding:2px 2px 6px;">${txt}</div>`;
+
+  let html = '';
+  if (combos.length > 0) {
+    html += sectionLabel('📋 Combos');
+    html += renderSection(combos, 0);
+  }
+  if (singles.length > 0) {
+    if (combos.length > 0) html += `<div style="height:6px;"></div>`;
+    html += sectionLabel('🍎 Individuales');
+    html += renderSection(singles, combos.length);
+  }
+  el.innerHTML = html;
 }
 
 function toggleFavStar(idx) {
