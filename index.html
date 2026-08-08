@@ -503,15 +503,19 @@ html,body{height:100%;background:var(--bg);color:var(--text);
         🍽 Comida
         <span id="food-total-badge" style="font-size:12px;color:var(--blue);font-weight:700;"></span>
       </div>
-      <!-- Tabs voz / texto -->
+      <!-- Tabs voz / texto / favoritos -->
       <div style="display:flex;gap:0;margin-bottom:12px;border:1px solid var(--brd2);border-radius:var(--rs);overflow:hidden;">
         <button id="tab-voice" onclick="setFoodTab('voice')"
-          style="flex:1;padding:9px;background:var(--gc);border:none;color:#e4ffe4;font-size:12px;font-weight:700;font-family:'Exo 2',sans-serif;cursor:pointer;">
+          style="flex:1;padding:9px;background:var(--gc);border:none;color:#e4ffe4;font-size:11px;font-weight:700;font-family:'Exo 2',sans-serif;cursor:pointer;">
           🎤 Voz
         </button>
         <button id="tab-text" onclick="setFoodTab('text')"
-          style="flex:1;padding:9px;background:var(--bg2);border:none;color:var(--text2);font-size:12px;font-weight:700;font-family:'Exo 2',sans-serif;cursor:pointer;">
+          style="flex:1;padding:9px;background:var(--bg2);border:none;color:var(--text2);font-size:11px;font-weight:700;font-family:'Exo 2',sans-serif;cursor:pointer;">
           ✏️ Texto
+        </button>
+        <button id="tab-favs" onclick="setFoodTab('favs')"
+          style="flex:1;padding:9px;background:var(--bg2);border:none;color:var(--text2);font-size:11px;font-weight:700;font-family:'Exo 2',sans-serif;cursor:pointer;">
+          ★ Favoritos
         </button>
       </div>
 
@@ -539,6 +543,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);
         <button class="btn-primary" onclick="processTextFood()" style="padding:11px;">Analizar con IA →</button>
       </div>
 
+      <!-- Panel favoritos -->
+      <div id="panel-favs" style="display:none;">
+        <div id="favs-list"></div>
+      </div>
+
       <div class="voice-fallback" id="voice-fallback" style="display:none;"></div>
       <div class="food-list" id="food-list"></div>
     </div>
@@ -555,10 +564,14 @@ html,body{height:100%;background:var(--bg);color:var(--text);
       <div><h1>Historial</h1><div class="topbar-sub">Balance acumulado</div></div>
     </div>
     <div class="cumu-card">
-      <div>
+      <div style="flex:1;">
         <div class="cumu-label">Balance total acumulado</div>
         <div class="cumu-val" id="cumu-val">—</div>
         <div class="cumu-sub" id="cumu-sub">Sin datos aún</div>
+        <div style="display:flex;gap:10px;margin-top:8px;" id="cumu-sport-row" style="display:none;">
+          <span id="cumu-sport-days" style="font-size:11px;font-weight:700;color:var(--gb);"></span>
+          <span id="cumu-nosport-days" style="font-size:11px;font-weight:700;color:var(--text3);"></span>
+        </div>
       </div>
       <div style="font-size:38px;" id="cumu-emoji">📊</div>
     </div>
@@ -692,6 +705,7 @@ const SPORTS_DATA = [
 let profile     = JSON.parse(localStorage.getItem('ct_profile') || 'null');
 let history     = JSON.parse(localStorage.getItem('ct_history') || '[]');
 let entries     = JSON.parse(localStorage.getItem('ct_entries') || '{}');
+let favorites   = JSON.parse(localStorage.getItem('ct_favorites') || '[]');
 let selGender   = 'male';
 let selPGender  = 'male';
 let selSportIdx = 0;
@@ -888,21 +902,114 @@ function renderSportList() {
   }).join('');
 }
 
+// ════════════════════════════════════
+//  FAVORITES
+// ════════════════════════════════════
+function saveFavorites() { localStorage.setItem('ct_favorites', JSON.stringify(favorites)); }
+
+function updateFoodFrequency(food) {
+  const key = food.name.toLowerCase().trim();
+  const ex  = favorites.find(f => f.name.toLowerCase().trim() === key);
+  if (ex) {
+    ex.count    = (ex.count || 1) + 1;
+    ex.portion  = food.portion;
+    ex.calories = food.calories;
+  } else {
+    favorites.push({ name: food.name, portion: food.portion || '', calories: food.calories, count: 1, starred: false });
+  }
+  saveFavorites();
+}
+
+function toggleFoodStar(name) {
+  const key = name.toLowerCase().trim();
+  let fav = favorites.find(f => f.name.toLowerCase().trim() === key);
+  if (!fav) {
+    const tf = today.foods.find(f => f.name === name);
+    if (!tf) return;
+    fav = { name: tf.name, portion: tf.portion || '', calories: tf.calories, count: 1, starred: true };
+    favorites.push(fav);
+  } else {
+    fav.starred = !fav.starred;
+  }
+  saveFavorites();
+  renderFoodList();
+  if (document.getElementById('panel-favs').style.display !== 'none') renderFavorites();
+}
+
+function getFavsList() {
+  return favorites
+    .filter(f => f.starred || (f.count || 1) >= 2)
+    .sort((a, b) => {
+      if (a.starred !== b.starred) return a.starred ? -1 : 1;
+      return (b.count || 1) - (a.count || 1);
+    });
+}
+
+function renderFavorites() {
+  const el   = document.getElementById('favs-list');
+  if (!el) return;
+  const list = getFavsList();
+  if (list.length === 0) {
+    el.innerHTML = `<div style="text-align:center;padding:22px 12px;color:var(--text3);font-size:13px;line-height:1.6;">
+      Aún no hay favoritos.<br>Come un alimento 2+ veces o toca ★ para fijarlo.</div>`;
+    return;
+  }
+  el.innerHTML = list.map((f, i) => {
+    const starColor = f.starred ? '#f5c518' : 'var(--text3)';
+    return `<div style="display:flex;align-items:center;gap:9px;background:var(--bg2);border-radius:var(--rs);padding:10px 12px;margin-bottom:6px;">
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:600;">${escHtml(f.name)}</div>
+        <div style="font-size:11px;color:var(--text2);">${escHtml(f.portion)} · ${f.calories} kcal${f.count >= 2 ? ` · ${f.count}× comido` : ''}</div>
+      </div>
+      <button onclick="toggleFavStar(${i})" style="background:none;border:none;font-size:19px;color:${starColor};cursor:pointer;padding:2px 4px;line-height:1;">${f.starred ? '★' : '☆'}</button>
+      <button onclick="addFavToDay(${i})" style="background:var(--ge);border:1px solid var(--gd);border-radius:8px;color:var(--gb);font-size:12px;font-weight:700;padding:6px 11px;cursor:pointer;font-family:'Exo 2',sans-serif;white-space:nowrap;">+ Agregar</button>
+    </div>`;
+  }).join('');
+}
+
+function toggleFavStar(idx) {
+  const list = getFavsList();
+  if (idx >= list.length) return;
+  const name = list[idx].name;
+  const key  = name.toLowerCase().trim();
+  const fav  = favorites.find(f => f.name.toLowerCase().trim() === key);
+  if (fav) { fav.starred = !fav.starred; saveFavorites(); renderFavorites(); renderFoodList(); }
+}
+
+function addFavToDay(idx) {
+  const list = getFavsList();
+  if (idx >= list.length) return;
+  const f = list[idx];
+  today.foods.push({ name: f.name, portion: f.portion, calories: f.calories });
+  today.saved = false;
+  autoSaveEntry(); renderToday();
+  toast('✓ ' + f.name + ' agregado');
+}
+
 function renderFoodList() {
   const el    = document.getElementById('food-list');
   const total = today.foods.reduce((s, f) => s + f.calories, 0);
   document.getElementById('food-total-badge').textContent = total > 0 ? total.toLocaleString() + ' kcal' : '';
 
   if (today.foods.length === 0) { el.innerHTML = ''; return; }
-  el.innerHTML = today.foods.map((f, i) => `
+  el.innerHTML = today.foods.map((f, i) => {
+    const key      = f.name.toLowerCase().trim();
+    const fav      = favorites.find(x => x.name.toLowerCase().trim() === key);
+    const isStarred= fav?.starred;
+    const safeName = f.name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return `
     <div class="food-item">
       <div class="food-name-wrap">
         <div class="food-name">${escHtml(f.name)}</div>
         ${f.portion ? `<div class="food-portion">${escHtml(f.portion)}</div>` : ''}
       </div>
       <div class="food-cal" style="color:var(--blue)">${f.calories} kcal</div>
+      <button onclick="toggleFoodStar('${safeName}')"
+        style="background:none;border:none;font-size:18px;cursor:pointer;padding:2px 4px;line-height:1;
+               color:${isStarred ? '#f5c518' : 'var(--text3)'};">${isStarred ? '★' : '☆'}</button>
       <button class="del-btn" onclick="deleteFood(${i})">✕</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function updateSaveBtn() {
@@ -1008,13 +1115,16 @@ function deleteSport(i)    { today.sports.splice(i,1); today.saved=false; autoSa
 //  VOICE / FOOD
 // ════════════════════════════════════
 function setFoodTab(tab) {
-  const isVoice = tab === 'voice';
-  document.getElementById('panel-voice').style.display = isVoice ? 'block' : 'none';
-  document.getElementById('panel-text').style.display  = isVoice ? 'none'  : 'block';
-  document.getElementById('tab-voice').style.background = isVoice ? 'var(--gc)' : 'var(--bg2)';
-  document.getElementById('tab-voice').style.color      = isVoice ? '#e4ffe4' : 'var(--text2)';
-  document.getElementById('tab-text').style.background  = isVoice ? 'var(--bg2)' : 'var(--gc)';
-  document.getElementById('tab-text').style.color       = isVoice ? 'var(--text2)' : '#e4ffe4';
+  ['voice','text','favs'].forEach(t => {
+    const panel = document.getElementById('panel-' + t);
+    const btn   = document.getElementById('tab-' + t);
+    if (!panel || !btn) return;
+    const active = t === tab;
+    panel.style.display    = active ? 'block' : 'none';
+    btn.style.background   = active ? 'var(--gc)' : 'var(--bg2)';
+    btn.style.color        = active ? '#e4ffe4' : 'var(--text2)';
+  });
+  if (tab === 'favs') renderFavorites();
 }
 
 function checkSpeechSupport() {
@@ -1155,9 +1265,11 @@ Formato de respuesta (JSON puro):
     const parsed = JSON.parse(match[0]);
 
     if (parsed.foods && Array.isArray(parsed.foods)) {
-      parsed.foods.forEach(f => today.foods.push({
-        name: f.name, portion: f.portion || '', calories: Math.round(f.calories)
-      }));
+      parsed.foods.forEach(f => {
+        const food = { name: f.name, portion: f.portion || '', calories: Math.round(f.calories) };
+        today.foods.push(food);
+        updateFoodFrequency(food);
+      });
       today.saved = false;
       autoSaveEntry(); renderToday();
       micStatus.textContent = `✓ ${parsed.foods.length} alimentos · ${parsed.totalCalories} kcal`;
@@ -1343,9 +1455,17 @@ function renderHistory() {
   cumuEl.textContent = (cumulative > 0 ? '+' : '') + cumulative.toLocaleString() + ' kcal';
   cumuEl.style.color = cumulative > 0 ? 'var(--red)' : 'var(--gb)';
   document.getElementById('cumu-emoji').textContent = cumulative > 0 ? '⚠️' : '🔥';
-  const deficitDays = history.filter(d => d.balance < 0).length;
+  const deficitDays  = history.filter(d => d.balance < 0).length;
+  const sportDays    = history.filter(d => d.sports && d.sports.length > 0).length;
+  const noSportDays  = history.length - sportDays;
   document.getElementById('cumu-sub').textContent =
-    `${history.length} días registrados · ${deficitDays} en déficit`;
+    `${history.length} días · ${deficitDays} en déficit`;
+  const sportRow = document.getElementById('cumu-sport-row');
+  if (sportRow) {
+    sportRow.style.display = 'flex';
+    document.getElementById('cumu-sport-days').textContent   = `🏃 ${sportDays} con deporte`;
+    document.getElementById('cumu-nosport-days').textContent = `😴 ${noSportDays} sin deporte`;
+  }
 
   // Chart (oldest → newest)
   const sorted = [...history].reverse();
@@ -1367,10 +1487,16 @@ function renderHistory() {
     const month     = date.toLocaleDateString('es', { month: 'short' });
     const isDeficit = d.balance < 0;
     const abs       = Math.abs(d.balance);
+    const hasSport  = d.sports && d.sports.length > 0;
+    const sportNames= hasSport ? d.sports.map(s => {
+      const sd = SPORTS_DATA.find(x => x.name === s.name);
+      return sd ? sd.icon : '🏋️';
+    }).join('') : '';
     return `<div class="hist-item">
-      <div class="hist-date-box">
-        <div class="hist-day">${day}</div>
+      <div class="hist-date-box" style="${hasSport ? 'background:var(--ge);border-radius:10px;padding:4px 6px;' : ''}">
+        <div class="hist-day" style="${hasSport ? 'color:var(--ga);' : ''}">${day}</div>
         <div class="hist-month">${month}</div>
+        ${hasSport ? `<div style="font-size:11px;letter-spacing:-1px;margin-top:1px;">${sportNames}</div>` : ''}
       </div>
       <div class="hist-info">
         <div class="hist-title">${d.consumed.toLocaleString()} kcal ingeridas</div>
