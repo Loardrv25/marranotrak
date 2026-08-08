@@ -920,6 +920,20 @@ function updateFoodFrequency(food) {
   saveFavorites();
 }
 
+function updateGroupFavorite(text, foods, totalCal) {
+  const name = text.trim().charAt(0).toUpperCase() + text.trim().slice(1);
+  const key  = name.toLowerCase().trim();
+  const ex   = favorites.find(f => f.isGroup && f.name.toLowerCase().trim() === key);
+  if (ex) {
+    ex.count    = (ex.count || 1) + 1;
+    ex.calories = totalCal;
+    ex.items    = foods;
+  } else {
+    favorites.push({ name, portion: '', calories: totalCal, count: 1, starred: false, isGroup: true, items: foods });
+  }
+  saveFavorites();
+}
+
 function toggleFoodStar(name) {
   const key = name.toLowerCase().trim();
   let fav = favorites.find(f => f.name.toLowerCase().trim() === key);
@@ -955,14 +969,20 @@ function renderFavorites() {
     return;
   }
   el.innerHTML = list.map((f, i) => {
-    const starColor = f.starred ? '#f5c518' : 'var(--text3)';
+    const starColor  = f.starred ? '#f5c518' : 'var(--text3)';
+    const groupBadge = f.isGroup
+      ? `<span style="font-size:9px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--text3);background:var(--bg3);border-radius:4px;padding:1px 5px;margin-left:5px;">combo</span>`
+      : '';
+    const sub = f.isGroup
+      ? `${f.calories} kcal total${f.count >= 2 ? ` · ${f.count}× comido` : ''}`
+      : `${escHtml(f.portion)} · ${f.calories} kcal${f.count >= 2 ? ` · ${f.count}× comido` : ''}`;
     return `<div style="display:flex;align-items:center;gap:9px;background:var(--bg2);border-radius:var(--rs);padding:10px 12px;margin-bottom:6px;">
-      <div style="flex:1;">
-        <div style="font-size:13px;font-weight:600;">${escHtml(f.name)}</div>
-        <div style="font-size:11px;color:var(--text2);">${escHtml(f.portion)} · ${f.calories} kcal${f.count >= 2 ? ` · ${f.count}× comido` : ''}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;display:flex;align-items:center;flex-wrap:wrap;gap:2px;">${escHtml(f.name)}${groupBadge}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${sub}</div>
       </div>
-      <button onclick="toggleFavStar(${i})" style="background:none;border:none;font-size:19px;color:${starColor};cursor:pointer;padding:2px 4px;line-height:1;">${f.starred ? '★' : '☆'}</button>
-      <button onclick="addFavToDay(${i})" style="background:var(--ge);border:1px solid var(--gd);border-radius:8px;color:var(--gb);font-size:12px;font-weight:700;padding:6px 11px;cursor:pointer;font-family:'Exo 2',sans-serif;white-space:nowrap;">+ Agregar</button>
+      <button onclick="toggleFavStar(${i})" style="background:none;border:none;font-size:19px;color:${starColor};cursor:pointer;padding:2px 4px;line-height:1;flex-shrink:0;">${f.starred ? '★' : '☆'}</button>
+      <button onclick="addFavToDay(${i})" style="background:var(--ge);border:1px solid var(--gd);border-radius:8px;color:var(--gb);font-size:12px;font-weight:700;padding:6px 11px;cursor:pointer;font-family:'Exo 2',sans-serif;white-space:nowrap;flex-shrink:0;">+ Agregar</button>
     </div>`;
   }).join('');
 }
@@ -980,10 +1000,16 @@ function addFavToDay(idx) {
   const list = getFavsList();
   if (idx >= list.length) return;
   const f = list[idx];
-  today.foods.push({ name: f.name, portion: f.portion, calories: f.calories });
+  if (f.isGroup && f.items && f.items.length > 0) {
+    // Agregar todos los ítems del combo individualmente
+    f.items.forEach(item => today.foods.push({ name: item.name, portion: item.portion || '', calories: item.calories }));
+    toast('✓ ' + f.name + ' agregado (' + f.items.length + ' ítems)');
+  } else {
+    today.foods.push({ name: f.name, portion: f.portion, calories: f.calories });
+    toast('✓ ' + f.name + ' agregado');
+  }
   today.saved = false;
   autoSaveEntry(); renderToday();
-  toast('✓ ' + f.name + ' agregado');
 }
 
 function renderFoodList() {
@@ -1265,11 +1291,18 @@ Formato de respuesta (JSON puro):
     const parsed = JSON.parse(match[0]);
 
     if (parsed.foods && Array.isArray(parsed.foods)) {
-      parsed.foods.forEach(f => {
-        const food = { name: f.name, portion: f.portion || '', calories: Math.round(f.calories) };
-        today.foods.push(food);
-        updateFoodFrequency(food);
-      });
+      const cookedFoods = parsed.foods.map(f => ({
+        name: f.name, portion: f.portion || '', calories: Math.round(f.calories)
+      }));
+      cookedFoods.forEach(food => today.foods.push(food));
+
+      // Favorites: si vino como grupo, guardar como uno solo;
+      // si es un alimento solo, guardar individualmente.
+      if (cookedFoods.length > 1) {
+        updateGroupFavorite(text, cookedFoods, Math.round(parsed.totalCalories || cookedFoods.reduce((s,f)=>s+f.calories,0)));
+      } else if (cookedFoods.length === 1) {
+        updateFoodFrequency(cookedFoods[0]);
+      }
       today.saved = false;
       autoSaveEntry(); renderToday();
       micStatus.textContent = `✓ ${parsed.foods.length} alimentos · ${parsed.totalCalories} kcal`;
