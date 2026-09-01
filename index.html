@@ -880,33 +880,34 @@ function renderToday() {
 
 function updateSummary(stats) {
   const { bmr, neat, burned, consumed, balance, proteinIn, proteinBase, proteinIdeal } = stats;
-  const pct   = proteinIdeal > 0 ? Math.min(proteinIn / proteinIdeal, 1) : 0;
-  const pctB  = proteinIdeal > 0 ? Math.round((proteinBase  / proteinIdeal) * 100) : 84;
-  const barW  = Math.round(pct * 100);
-  const color = proteinIn >= proteinIdeal ? 'var(--gb)'
-              : proteinIn >= proteinBase  ? '#e8a020' : 'var(--red)';
-  document.getElementById('prot-label').textContent = `${proteinIn}g`;
-  document.getElementById('prot-bar').style.width      = barW + '%';
-  document.getElementById('prot-bar').style.background = color;
-  // markers via CSS on the container — update hint text
+
+  // ── Barra de proteína ──
+  const protPct  = proteinIdeal > 0 ? Math.min(proteinIn / proteinIdeal, 1) : 0;
+  const protPctB = proteinIdeal > 0 ? Math.round((proteinBase / proteinIdeal) * 100) : 84;
+  const protColor = proteinIn >= proteinIdeal ? 'var(--gb)'
+                  : proteinIn >= proteinBase  ? '#e8a020' : 'var(--red)';
+  document.getElementById('prot-label').textContent    = `${proteinIn}g`;
+  document.getElementById('prot-bar').style.width      = Math.round(protPct * 100) + '%';
+  document.getElementById('prot-bar').style.background = protColor;
   let hint;
   if (proteinIn >= proteinIdeal)     hint = `✓ Ideal alcanzado (${proteinIdeal}g)`;
   else if (proteinIn >= proteinBase) hint = `✓ Base ok · faltan ${proteinIdeal - proteinIn}g para ideal`;
   else                               hint = `Faltan ${proteinBase - proteinIn}g para base · ${proteinIdeal - proteinIn}g para ideal`;
   document.getElementById('prot-hint').textContent = hint;
-  // update labels and marker position
   const markerEl = document.getElementById('prot-base-marker');
-  if (markerEl) markerEl.style.left = pctB + '%';
+  if (markerEl) markerEl.style.left = protPctB + '%';
   const baseLbl  = document.getElementById('prot-base-lbl');
   const idealLbl = document.getElementById('prot-ideal-lbl');
   if (baseLbl)  baseLbl.textContent  = `Base ${proteinBase}g`;
   if (idealLbl) idealLbl.textContent = `Ideal ${proteinIdeal}g`;
-  const pct    = burned > 0 ? Math.min(consumed / burned, 1.5) : 0;
-  const circ   = 251.3;
-  const offset = circ - (Math.min(pct, 1) * circ);
-  const ring   = document.getElementById('ring-track');
+
+  // ── Ring de calorías ──
+  const calPct  = burned > 0 ? Math.min(consumed / burned, 1.5) : 0;
+  const circ    = 251.3;
+  const offset  = circ - (Math.min(calPct, 1) * circ);
+  const ring    = document.getElementById('ring-track');
   ring.style.strokeDashoffset = offset;
-  ring.style.stroke = pct > 1 ? 'var(--red)' : 'var(--gc)';
+  ring.style.stroke = calPct > 1 ? 'var(--red)' : 'var(--gc)';
 
   const absBalance = Math.abs(balance);
   const ringVal = document.getElementById('ring-val');
