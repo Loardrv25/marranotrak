@@ -469,6 +469,27 @@ html,body{height:100%;background:var(--bg);color:var(--text);
       </div>
     </div>
 
+    <!-- Proteína -->
+    <div class="card" style="padding:14px 18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--text3);">💪 Proteína diaria</div>
+        <div id="prot-label" style="font-size:16px;font-weight:900;color:var(--text);">0g</div>
+      </div>
+      <!-- barra con marcador de nivel base -->
+      <div style="position:relative;background:var(--bg3);border-radius:100px;height:10px;overflow:visible;">
+        <div id="prot-bar" style="height:100%;border-radius:100px;background:var(--gb);width:0%;transition:width .4s;"></div>
+        <!-- línea vertical = nivel base -->
+        <div id="prot-base-marker" style="position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--text2);border-radius:2px;left:84%;transform:translateX(-50%);"></div>
+      </div>
+      <!-- leyenda -->
+      <div style="display:flex;justify-content:space-between;margin-top:6px;">
+        <div style="font-size:10px;color:var(--text3);">0g</div>
+        <div style="font-size:10px;color:var(--text2);font-weight:700;" id="prot-base-lbl">Base</div>
+        <div style="font-size:10px;color:var(--gb);font-weight:700;" id="prot-ideal-lbl">Ideal</div>
+      </div>
+      <div id="prot-hint" style="font-size:11px;color:var(--text2);margin-top:6px;"></div>
+    </div>
+
     <!-- Steps -->
     <div class="card">
       <div class="card-title">
@@ -823,17 +844,22 @@ function calcSportCal(sportName, amount) {
   return Math.round(s.met * w * (amount / 60));
 }
 
+function calcProteinTargets() {
+  const w = profile?.weight || 70;
+  return { base: Math.round(w * 1.6), ideal: Math.round(w * 1.9) };
+}
+
 function getTodayStats() {
-  const bmr       = calcBMR();
-  // NEAT: actividades de vida diaria no registradas (digestión ~10%, trabajo mental,
-  // higiene, moverse por la casa, etc.) → +20% sobre TMB
-  const neat      = Math.round(bmr * 0.20);
-  const stepsCal  = calcStepsCal(today.steps);
-  const sportsCal = today.sports.reduce((s, x) => s + calcSportCal(x.name, x.amount ?? x.minutes ?? 0), 0);
-  const burned    = bmr + neat + stepsCal + sportsCal;
-  const consumed  = today.foods.reduce((s, f) => s + f.calories, 0);
-  const balance   = consumed - burned;
-  return { bmr, neat, stepsCal, sportsCal, burned, consumed, balance };
+  const bmr        = calcBMR();
+  const neat       = Math.round(bmr * 0.20);
+  const stepsCal   = calcStepsCal(today.steps);
+  const sportsCal  = today.sports.reduce((s, x) => s + calcSportCal(x.name, x.amount ?? x.minutes ?? 0), 0);
+  const burned     = bmr + neat + stepsCal + sportsCal;
+  const consumed   = today.foods.reduce((s, f) => s + f.calories, 0);
+  const balance    = consumed - burned;
+  const proteinIn  = today.foods.reduce((s, f) => s + (f.protein || 0), 0);
+  const { base: proteinBase, ideal: proteinIdeal } = calcProteinTargets();
+  return { bmr, neat, stepsCal, sportsCal, burned, consumed, balance, proteinIn, proteinBase, proteinIdeal };
 }
 
 // ════════════════════════════════════
@@ -853,7 +879,31 @@ function renderToday() {
 }
 
 function updateSummary(stats) {
-  const { bmr, neat, burned, consumed, balance } = stats;
+  const { bmr, neat, burned, consumed, balance, proteinIn, proteinTgt } = stats;
+
+  // Protein bar (two fixed targets: base 1.6g/kg · ideal 1.9g/kg)
+  const { proteinIn, proteinBase, proteinIdeal } = stats;
+  const pct   = proteinIdeal > 0 ? Math.min(proteinIn / proteinIdeal, 1) : 0;
+  const pctB  = proteinIdeal > 0 ? Math.round((proteinBase  / proteinIdeal) * 100) : 84;
+  const barW  = Math.round(pct * 100);
+  const color = proteinIn >= proteinIdeal ? 'var(--gb)'
+              : proteinIn >= proteinBase  ? '#e8a020' : 'var(--red)';
+  document.getElementById('prot-label').textContent = `${proteinIn}g`;
+  document.getElementById('prot-bar').style.width      = barW + '%';
+  document.getElementById('prot-bar').style.background = color;
+  // markers via CSS on the container — update hint text
+  let hint;
+  if (proteinIn >= proteinIdeal)     hint = `✓ Ideal alcanzado (${proteinIdeal}g)`;
+  else if (proteinIn >= proteinBase) hint = `✓ Base ok · faltan ${proteinIdeal - proteinIn}g para ideal`;
+  else                               hint = `Faltan ${proteinBase - proteinIn}g para base · ${proteinIdeal - proteinIn}g para ideal`;
+  document.getElementById('prot-hint').textContent = hint;
+  // update labels and marker position
+  const markerEl = document.getElementById('prot-base-marker');
+  if (markerEl) markerEl.style.left = pctB + '%';
+  const baseLbl  = document.getElementById('prot-base-lbl');
+  const idealLbl = document.getElementById('prot-ideal-lbl');
+  if (baseLbl)  baseLbl.textContent  = `Base ${proteinBase}g`;
+  if (idealLbl) idealLbl.textContent = `Ideal ${proteinIdeal}g`;
   const pct    = burned > 0 ? Math.min(consumed / burned, 1.5) : 0;
   const circ   = 251.3;
   const offset = circ - (Math.min(pct, 1) * circ);
@@ -1088,7 +1138,10 @@ function renderFoodList() {
         <div class="food-name">${escHtml(f.name)}</div>
         ${f.portion ? `<div class="food-portion">${escHtml(f.portion)}</div>` : ''}
       </div>
-      <div class="food-cal" style="color:var(--blue)">${f.calories} kcal</div>
+      <div style="text-align:right;">
+        <div class="food-cal" style="color:var(--blue)">${f.calories} kcal</div>
+        ${f.protein ? `<div style="font-size:10px;color:var(--gb);font-weight:700;">${f.protein}g prot</div>` : ''}
+      </div>
       <button onclick="toggleFoodStar('${safeName}')"
         style="background:none;border:none;font-size:18px;cursor:pointer;padding:2px 4px;line-height:1;
                color:${isStarred ? '#f5c518' : 'var(--text3)'};">${isStarred ? '★' : '☆'}</button>
@@ -1321,7 +1374,7 @@ Persona: peso ${profile.weight}kg.
 Lo que comió: "${text}"
 
 Formato de respuesta (JSON puro):
-{"foods":[{"name":"nombre del alimento","portion":"cantidad exacta con unidad","calories":número}],"totalCalories":número}`;
+{"foods":[{"name":"nombre del alimento","portion":"cantidad exacta con unidad","calories":número,"protein":gramos_proteína}],"totalCalories":número,"totalProtein":número}`;
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -1351,7 +1404,7 @@ Formato de respuesta (JSON puro):
 
     if (parsed.foods && Array.isArray(parsed.foods)) {
       const cookedFoods = parsed.foods.map(f => ({
-        name: f.name, portion: f.portion || '', calories: Math.round(f.calories)
+        name: f.name, portion: f.portion || '', calories: Math.round(f.calories), protein: Math.round(f.protein || 0)
       }));
       cookedFoods.forEach(food => today.foods.push(food));
 
@@ -1400,7 +1453,8 @@ function saveDay() {
     date: today.date, steps: today.steps,
     sports: [...today.sports], foods: [...today.foods],
     bmr: stats.bmr, burned: stats.burned,
-    consumed: stats.consumed, balance: stats.balance
+    consumed: stats.consumed, balance: stats.balance,
+    proteinIn: stats.proteinIn, proteinBase: stats.proteinBase, proteinIdeal: stats.proteinIdeal
   };
   const idx = history.findIndex(d => d.date === today.date);
   if (idx >= 0) history[idx] = record; else history.unshift(record);
