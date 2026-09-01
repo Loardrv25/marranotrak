@@ -879,10 +879,7 @@ function renderToday() {
 }
 
 function updateSummary(stats) {
-  const { bmr, neat, burned, consumed, balance, proteinIn, proteinTgt } = stats;
-
-  // Protein bar (two fixed targets: base 1.6g/kg · ideal 1.9g/kg)
-  const { proteinIn, proteinBase, proteinIdeal } = stats;
+  const { bmr, neat, burned, consumed, balance, proteinIn, proteinBase, proteinIdeal } = stats;
   const pct   = proteinIdeal > 0 ? Math.min(proteinIn / proteinIdeal, 1) : 0;
   const pctB  = proteinIdeal > 0 ? Math.round((proteinBase  / proteinIdeal) * 100) : 84;
   const barW  = Math.round(pct * 100);
