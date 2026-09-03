@@ -115,7 +115,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);
   background:var(--bg2);color:var(--text);font-size:24px;
   display:flex;align-items:center;justify-content:center;
   cursor:pointer;flex-shrink:0;font-weight:300;}
-.stp-btn:active{background:var(--ge);border-color:var(--gc);}
+.stp-btn:active{background:var(--ge);border-color:var(--gc);transform:scale(.9);}
 .steps-center{flex:1;text-align:center;}
 .steps-num{font-size:42px;font-weight:900;letter-spacing:-2px;line-height:1;}
 .steps-cal{font-size:12px;color:var(--gb);margin-top:3px;font-weight:600;letter-spacing:.3px;}
@@ -128,8 +128,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);
 .sport-name{flex:1;font-size:13px;font-weight:600;}
 .sport-time{font-size:12px;color:var(--text2);}
 .sport-cal{font-size:13px;font-weight:700;color:var(--gb);min-width:52px;text-align:right;}
-.del-btn{width:26px;height:26px;border-radius:50%;border:none;
-  background:var(--red-dim);color:var(--red);font-size:12px;
+.del-btn{width:32px;height:32px;border-radius:50%;border:none;
+  background:var(--red-dim);color:var(--red);font-size:13px;
   cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 
 .add-row{display:flex;align-items:center;gap:8px;
@@ -364,6 +364,133 @@ html,body{height:100%;background:var(--bg);color:var(--text);
 /* ── SLOGAN ── */
 .topbar-slogan{font-size:10px;font-weight:700;letter-spacing:2px;
   text-transform:uppercase;color:var(--gd);margin-top:1px;}
+
+/* ══════════════════════════════════════════
+   ANIMATIONS & MOTION — Design upgrade
+   ══════════════════════════════════════════ */
+
+/* Ring fills smoothly on update */
+#ring-track {
+  transition: stroke-dashoffset .7s cubic-bezier(.25,.46,.45,.94),
+              stroke .35s ease;
+}
+
+/* Food and sport items slide in when added */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(9px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);   }
+}
+.food-item  { animation: fadeSlideIn .22s cubic-bezier(.25,.46,.45,.94); }
+.sport-item { animation: fadeSlideIn .22s cubic-bezier(.25,.46,.45,.94); }
+
+/* Nav icon springs on activation */
+.nav-btn svg {
+  transition: transform .22s cubic-bezier(.34,1.56,.64,1);
+}
+.nav-btn.active svg { transform: scale(1.18); }
+.nav-btn { transition: color .18s; }
+
+/* Date chips — spring on press */
+.date-chip {
+  transition: background .14s, border-color .14s, color .14s,
+              transform .12s cubic-bezier(.34,1.56,.64,1);
+  will-change: transform;
+}
+.date-chip:active { transform: scale(.92); }
+
+/* Step buttons */
+.stp-btn {
+  transition: background .12s, border-color .12s,
+              transform .1s cubic-bezier(.34,1.56,.64,1);
+  will-change: transform;
+}
+
+/* Add row */
+.add-row {
+  transition: background .14s, border-color .18s, color .14s,
+              transform .1s;
+}
+.add-row:active { transform: scale(.98); }
+
+/* Sport option in modal */
+.sport-opt {
+  transition: border-color .13s, background .13s, transform .1s;
+  will-change: transform;
+}
+.sport-opt:active { transform: scale(.98); }
+
+/* Save FAB */
+.save-btn {
+  transition: background .32s, color .32s, border-color .32s,
+              box-shadow .3s, transform .1s;
+  will-change: transform;
+}
+.save-btn:active { transform: scale(.97); opacity: .9; }
+
+/* Delete button — scaled up for touch & animated */
+.del-btn {
+  transition: background .12s, transform .1s;
+  will-change: transform;
+}
+.del-btn:active { transform: scale(.85); }
+
+/* Duration buttons in sport modal */
+.dur-btn {
+  transition: background .12s, transform .1s;
+}
+.dur-btn:active { background: var(--ge); transform: scale(.92); }
+
+/* Steps display number bounce on change */
+@keyframes numBounce {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.09); }
+  100% { transform: scale(1); }
+}
+.steps-num.bounce { animation: numBounce .22s ease-out; }
+
+/* Protein bar smooth */
+#prot-bar {
+  transition: width .5s cubic-bezier(.25,.46,.45,.94),
+              background .4s ease;
+}
+
+/* History items entrance */
+@keyframes histFadeIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.hist-item {
+  animation: histFadeIn .25s cubic-bezier(.25,.46,.45,.94);
+}
+
+/* Tab buttons */
+#tab-voice, #tab-text, #tab-favs {
+  transition: background .18s, color .18s, transform .1s;
+}
+#tab-voice:active, #tab-text:active, #tab-favs:active {
+  transform: scale(.97);
+}
+
+/* Gender buttons */
+.gender-btn {
+  transition: border-color .15s, background .15s, color .15s, transform .1s;
+}
+.gender-btn:active { transform: scale(.96); }
+
+/* Primary/outline/danger buttons */
+.btn-primary {
+  transition: opacity .15s, transform .1s, background .2s;
+}
+.btn-primary:active { transform: scale(.98); opacity: .88; }
+.btn-outline:active, .btn-danger:active { opacity: .7; }
+
+/* Mic button: nicer press */
+.mic-btn {
+  transition: transform .12s cubic-bezier(.34,1.56,.64,1),
+              box-shadow .22s, background .22s;
+  will-change: transform;
+}
+.mic-btn:active { transform: scale(.91) !important; }
 </style>
 </head>
 <body>
@@ -551,7 +678,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);
               <line x1="8" y1="23" x2="16" y2="23"/>
             </svg>
           </button>
-          <div class="mic-status" id="mic-status">Toca para hablar</div>
+          <div class="mic-status" id="mic-status">Habla para registrar</div>
           <div class="mic-transcript" id="mic-transcript"></div>
         </div>
       </div>
@@ -921,7 +1048,11 @@ function updateSummary(stats) {
 }
 
 function renderSteps() {
-  document.getElementById('steps-display').textContent = today.steps.toLocaleString();
+  const el = document.getElementById('steps-display');
+  el.textContent = today.steps.toLocaleString();
+  el.classList.remove('bounce');
+  void el.offsetWidth; // reflow to restart animation
+  el.classList.add('bounce');
   const cal = calcStepsCal(today.steps);
   document.getElementById('steps-cal').textContent     = cal + ' kcal';
   document.getElementById('steps-cal-badge').textContent = cal > 0 ? '+' + cal + ' kcal' : '';
@@ -930,7 +1061,7 @@ function renderSteps() {
 function renderSportList() {
   const el = document.getElementById('sport-list');
   if (today.sports.length === 0) {
-    el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:2px 0;">Sin deporte registrado — se omite del cálculo.</div>';
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:4px 0;">Sin deporte hoy.</div>';
     return;
   }
   el.innerHTML = today.sports.map((s, i) => {
@@ -1266,7 +1397,7 @@ function setFoodTab(tab) {
 function checkSpeechSupport() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
-    document.getElementById('mic-status').textContent = 'Voz no soportada — usa texto';
+    document.getElementById('mic-status').textContent = 'Voz no disponible — usa el tab Texto';
     document.getElementById('voice-fallback').style.display = 'block';
   }
 }
@@ -1324,7 +1455,7 @@ function handleMic() {
     micBtn.classList.remove('listening');
     const text = finalTranscript.trim() || micTranscript.textContent.trim();
     if (text) processFood(text);
-    else micStatus.textContent = 'No se escuchó nada. Intenta de nuevo.';
+    else micStatus.textContent = 'No escuché nada — intenta de nuevo.';
   };
 
   recognition.onerror = (e) => {
@@ -1357,7 +1488,7 @@ async function processFood(text) {
   micBtn.classList.remove('listening');
   micBtn.classList.add('processing');
   micBtn.innerHTML = '<div class="spin"></div>';
-  micStatus.textContent = 'Analizando con IA...';
+  micStatus.textContent = 'Identificando alimentos...';
 
   try {
     const prompt = `Eres nutricionista experto. Analiza lo que comió esta persona.
