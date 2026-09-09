@@ -1094,8 +1094,9 @@ function updateFoodFrequency(food) {
     ex.count    = (ex.count || 1) + 1;
     ex.portion  = food.portion;
     ex.calories = food.calories;
+    ex.protein  = food.protein || 0;
   } else {
-    favorites.push({ name: food.name, portion: food.portion || '', calories: food.calories, count: 1, starred: false });
+    favorites.push({ name: food.name, portion: food.portion || '', calories: food.calories, protein: food.protein || 0, count: 1, starred: false });
   }
   saveFavorites();
 }
@@ -1120,7 +1121,7 @@ function toggleFoodStar(name) {
   if (!fav) {
     const tf = today.foods.find(f => f.name === name);
     if (!tf) return;
-    fav = { name: tf.name, portion: tf.portion || '', calories: tf.calories, count: 1, starred: true };
+    fav = { name: tf.name, portion: tf.portion || '', calories: tf.calories, protein: tf.protein || 0, count: 1, starred: true };
     favorites.push(fav);
   } else {
     fav.starred = !fav.starred;
@@ -1241,10 +1242,10 @@ function addFavToDay(idx) {
   const f = list[idx];
   if (f.isGroup && f.items && f.items.length > 0) {
     // Agregar todos los ítems del combo individualmente
-    f.items.forEach(item => today.foods.push({ name: item.name, portion: item.portion || '', calories: item.calories }));
+    f.items.forEach(item => today.foods.push({ name: item.name, portion: item.portion || '', calories: item.calories, protein: item.protein || 0 }));
     toast('✓ ' + f.name + ' agregado (' + f.items.length + ' ítems)');
   } else {
-    today.foods.push({ name: f.name, portion: f.portion, calories: f.calories });
+    today.foods.push({ name: f.name, portion: f.portion, calories: f.calories, protein: f.protein || 0 });
     toast('✓ ' + f.name + ' agregado');
   }
   today.saved = false;

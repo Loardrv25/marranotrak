@@ -1,5 +1,5 @@
 // MarranoTrak Service Worker — offline cache
-const CACHE = 'marranotrak-v15';
+const CACHE = 'marranotrak-v16';
 const ASSETS = [
   './',
   './index.html',
