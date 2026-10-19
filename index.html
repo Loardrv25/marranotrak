@@ -531,10 +531,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);
         </div>
       </div>
       <div class="form-group" style="margin-top:20px;">
-        <label class="form-label">API Key de Claude</label>
-        <div class="info-box">Se guarda <strong>solo en este dispositivo</strong>, nunca en ningún servidor. La consigues en <strong>console.anthropic.com</strong></div>
+        <label class="form-label">Key de acceso</label>
+        <div class="info-box">Se guarda <strong>solo en este dispositivo</strong>, nunca en ningún servidor.</div>
         <div class="key-wrap">
-          <input id="s-apikey" class="form-input" type="password" placeholder="sk-ant-api03-...">
+          <input id="s-apikey" class="form-input" type="password" placeholder="exd_live_...">
           <button class="key-toggle" onclick="toggleKeyVis('s-apikey',this)">👁</button>
         </div>
       </div>
@@ -769,13 +769,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);
       <button class="btn-primary" onclick="updateProfile()">Guardar cambios</button>
     </div>
     <div class="card">
-      <div class="card-title">API Key de Claude</div>
+      <div class="card-title">Key de acceso</div>
       <div class="info-box">Guardada solo en este dispositivo. Para cambiarla ingresa la nueva y presiona guardar.</div>
       <div class="key-wrap">
-        <input id="p-apikey" class="form-input" type="password" placeholder="sk-ant-api03-...">
+        <input id="p-apikey" class="form-input" type="password" placeholder="exd_live_...">
         <button class="key-toggle" onclick="toggleKeyVis('p-apikey',this)">👁</button>
       </div>
-      <button class="btn-outline" onclick="saveApiKey()">Guardar key</button>
+      <button class="btn-outline" onclick="saveGatewayKey()">Guardar key</button>
     </div>
     <div class="card">
       <div class="card-title">⚠️ Zona de peligro</div>
@@ -878,14 +878,15 @@ let currentEntry = entries[editingDate];
 let today        = currentEntry; // alias so old code keeps working
 
 // ════════════════════════════════════
-//  API KEY
-//  Primero busca en localStorage (profile.apiKey),
-//  luego en config.js (solo para dev local)
+//  EXODUS GATEWAY KEY
+//  Lee de caltrak-config.js (nunca se sube a GitHub con valor real)
 // ════════════════════════════════════
-function getApiKey() {
-  if (profile?.apiKey && profile.apiKey.length > 10) return profile.apiKey;
-  const configKey = window.MARRANOTRAK_API_KEY;
-  if (configKey && configKey.length > 10) return configKey;
+function getGatewayKey() {
+  // Primero localStorage (ingresado por el usuario en el dispositivo)
+  if (profile?.gatewayKey && profile.gatewayKey.length > 10) return profile.gatewayKey;
+  // Fallback: config.js (solo para entornos con acceso al archivo local)
+  const k = window.EXODUS_GATEWAY_API_KEY;
+  if (k && k.length > 10) return k;
   return '';
 }
 
@@ -934,10 +935,10 @@ function saveSetup() {
   const age    = parseInt(document.getElementById('s-age').value)     || 30;
   const weight = parseFloat(document.getElementById('s-weight').value)|| 70;
   const height = parseInt(document.getElementById('s-height').value)  || 170;
-  const apiKey = document.getElementById('s-apikey').value.trim();
-  if (!apiKey) { toast('⚠️ Ingresa tu API key de Claude'); return; }
+  const gatewayKey = document.getElementById('s-apikey').value.trim();
+  if (!gatewayKey) { toast('⚠️ Ingresa la key de acceso'); return; }
 
-  profile = { name, age, weight, height, gender: selGender, apiKey };
+  profile = { name, age, weight, height, gender: selGender, gatewayKey };
   localStorage.setItem('ct_profile', JSON.stringify(profile));
 
   document.getElementById('main-nav').style.display = 'flex';
@@ -1405,7 +1406,7 @@ function checkSpeechSupport() {
 }
 
 function handleMic() {
-  if (!getApiKey()) { toast('⚠️ Agrega tu API key en Perfil'); return; }
+  if (!getGatewayKey()) { toast('⚠️ Gateway no configurado'); return; }
   if (isProcessing) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { document.getElementById('voice-fallback').style.display = 'block'; return; }
@@ -1481,8 +1482,8 @@ function processTextFood() {
 }
 
 async function processFood(text) {
-  const apiKey = getApiKey();
-  if (!apiKey) { toast('⚠️ Sin API key'); return; }
+  const apiKey = getGatewayKey();
+  if (!apiKey) { toast('⚠️ Gateway no configurado'); return; }
   isProcessing = true;
 
   const micBtn    = document.getElementById('mic-btn');
@@ -1507,28 +1508,36 @@ Lo que comió: "${text}"
 Formato de respuesta (JSON puro):
 {"foods":[{"name":"nombre del alimento","portion":"cantidad exacta con unidad","calories":número,"protein":gramos_proteína}],"totalCalories":número,"totalProtein":número}`;
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        messages: [{ role:'user', content: prompt }]
-      })
+    const gatewayBody = JSON.stringify({
+      model: 'claude-haiku-4-5',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 1024
+    });
+    const gatewayHeaders = {
+      'Authorization': 'Bearer ' + apiKey,
+      'Content-Type': 'application/json'
+    };
+
+    let res = await fetch('https://api.exodus-isar.tech/v1/chat', {
+      method: 'POST', headers: gatewayHeaders, body: gatewayBody
     });
 
+    // Reintento automático si rate-limit (429)
+    if (res.status === 429) {
+      micStatus.textContent = 'Límite alcanzado, reintentando...';
+      await new Promise(r => setTimeout(r, 2500));
+      res = await fetch('https://api.exodus-isar.tech/v1/chat', {
+        method: 'POST', headers: gatewayHeaders, body: gatewayBody
+      });
+    }
+
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       throw new Error(err.error?.message || 'Error ' + res.status);
     }
 
     const data   = await res.json();
-    const raw    = data.content[0].text.trim();
+    const raw    = data.choices[0].message.content.trim();
     const match  = raw.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('Respuesta inesperada de la IA');
     const parsed = JSON.parse(match[0]);
@@ -1558,7 +1567,7 @@ Formato de respuesta (JSON puro):
 
   } catch (err) {
     micStatus.textContent = '❌ ' + (err.message || 'Error desconocido');
-    toast('Error: ' + (err.message || 'revisa tu API key'));
+    toast('Error: ' + (err.message || 'revisa la key de acceso'));
     console.error(err);
   } finally {
     isProcessing = false;
@@ -1809,7 +1818,7 @@ function renderProfile() {
   document.getElementById('p-age-in').value    = age;
   document.getElementById('p-weight-in').value = weight;
   document.getElementById('p-height-in').value = height;
-  document.getElementById('p-apikey').value    = profile.apiKey || '';
+  document.getElementById('p-apikey').value    = profile.gatewayKey || '';
   selPGender = gender;
   document.getElementById('pg-male').classList.toggle('sel',   gender === 'male');
   document.getElementById('pg-female').classList.toggle('sel', gender === 'female');
@@ -1832,12 +1841,12 @@ function updateProfile() {
   toast('✓ Perfil actualizado');
 }
 
-function saveApiKey() {
+function saveGatewayKey() {
   const key = document.getElementById('p-apikey').value.trim();
-  if (!key) { toast('⚠️ Ingresa una API key'); return; }
-  profile = { ...profile, apiKey: key };
+  if (!key) { toast('⚠️ Ingresa la key'); return; }
+  profile = { ...profile, gatewayKey: key };
   localStorage.setItem('ct_profile', JSON.stringify(profile));
-  toast('✓ API key guardada');
+  toast('✓ Key guardada');
 }
 
 // ════════════════════════════════════
