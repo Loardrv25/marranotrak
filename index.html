@@ -1668,7 +1668,6 @@ Formato de respuesta (JSON puro):
 {"foods":[{"name":"nombre del alimento","portion":"cantidad exacta con unidad","calories":número,"protein":gramos_proteína}],"totalCalories":número,"totalProtein":número}`;
 
     const chatBody = {
-      model: 'claude-haiku-4-5',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 1024
     };
