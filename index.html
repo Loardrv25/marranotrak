@@ -171,6 +171,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);
 .food-portion{font-size:11px;color:var(--text2);}
 .food-cal{font-size:14px;font-weight:700;min-width:52px;text-align:right;}
 
+/* ── KEY ROW (API key input + toggle visibility) ── */
+.key-row{display:flex;gap:8px;align-items:center;}
+.key-row .form-input{flex:1;}
+.vis-btn{width:42px;height:42px;border-radius:var(--rs);border:1px solid var(--brd2);
+  background:var(--bg2);color:var(--text2);cursor:pointer;font-size:16px;flex-shrink:0;}
+.vis-btn:active{background:var(--ge);border-color:var(--gc);}
+
 /* ── SAVE FAB ── */
 .save-fab{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
   width:calc(100% - 28px);max-width:402px;z-index:100;}
@@ -530,14 +537,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);
           <button class="gender-btn" id="g-female" onclick="selectGender('female')">♀ Femenino</button>
         </div>
       </div>
-      <div class="form-group" style="margin-top:20px;">
-        <label class="form-label">Key de acceso</label>
-        <div class="info-box">Se guarda <strong>solo en este dispositivo</strong>, nunca en ningún servidor.</div>
-        <div class="key-wrap">
-          <input id="s-apikey" class="form-input" type="password" placeholder="exd_live_...">
-          <button class="key-toggle" onclick="toggleKeyVis('s-apikey',this)">👁</button>
-        </div>
-      </div>
       <button class="btn-primary" style="margin-top:24px;" onclick="saveSetup()">Comenzar →</button>
     </div>
   </div>
@@ -769,13 +768,29 @@ html,body{height:100%;background:var(--bg);color:var(--text);
       <button class="btn-primary" onclick="updateProfile()">Guardar cambios</button>
     </div>
     <div class="card">
-      <div class="card-title">Key de acceso</div>
-      <div class="info-box">Guardada solo en este dispositivo. Para cambiarla ingresa la nueva y presiona guardar.</div>
-      <div class="key-wrap">
-        <input id="p-apikey" class="form-input" type="password" placeholder="exd_live_...">
-        <button class="key-toggle" onclick="toggleKeyVis('p-apikey',this)">👁</button>
+      <div class="card-title">Acceso API</div>
+      <div class="form-group">
+        <label class="form-label">Gateway API Key</label>
+        <div class="key-row">
+          <input id="p-apikey" class="form-input" type="password" placeholder="exd_live_...">
+          <button class="vis-btn" onclick="toggleKeyVis('p-apikey',this)">👁</button>
+        </div>
       </div>
-      <button class="btn-outline" onclick="saveGatewayKey()">Guardar key</button>
+      <button class="btn-primary" onclick="saveGatewayKey()">Guardar key</button>
+    </div>
+    <div class="card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        Firma de instalación
+        <span id="inst-status-badge" style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--bg3);color:var(--text2);">sin activar</span>
+      </div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;">
+        Activa este dispositivo con un código de activación. La llave privada nunca sale del dispositivo.
+      </p>
+      <div class="form-group" id="act-form-group">
+        <label class="form-label">Código de activación</label>
+        <input id="p-actcode" class="form-input" type="text" placeholder="exd_act_...">
+      </div>
+      <button class="btn-primary" id="act-btn" onclick="doActivate()">Activar dispositivo</button>
     </div>
     <div class="card">
       <div class="card-title">⚠️ Zona de peligro</div>
@@ -878,16 +893,164 @@ let currentEntry = entries[editingDate];
 let today        = currentEntry; // alias so old code keeps working
 
 // ════════════════════════════════════
-//  EXODUS GATEWAY KEY
-//  Lee de caltrak-config.js (nunca se sube a GitHub con valor real)
+//  GATEWAY — capa de red central
+//  Todo lo que habla con Exodus Isar pasa por aquí.
+//  Con require_signature OFF: solo Bearer.
+//  Con require_signature ON:  Bearer + firma Ed25519 RFC 9421.
 // ════════════════════════════════════
-function getGatewayKey() {
-  // Primero localStorage (ingresado por el usuario en el dispositivo)
-  if (profile?.gatewayKey && profile.gatewayKey.length > 10) return profile.gatewayKey;
-  // Fallback: config.js (solo para entornos con acceso al archivo local)
-  const k = window.EXODUS_GATEWAY_API_KEY;
-  if (k && k.length > 10) return k;
-  return '';
+const GATEWAY_BASE = 'https://api.exodus-isar.tech';
+
+// ── helpers de codificación ──
+function bufToB64url(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function bufToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+// ── IndexedDB — private key no-exportable ──
+const IDB_NAME = 'marranotrak', IDB_STORE = 'keys', IDB_KEY_ID = 'ed25519_private';
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE);
+    req.onsuccess = e => res(e.target.result);
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+async function idbSaveKey(privateKey) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(privateKey, IDB_KEY_ID);
+    tx.oncomplete = res;
+    tx.onerror    = e => rej(e.target.error);
+  });
+}
+async function idbLoadKey() {
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx  = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(IDB_KEY_ID);
+    req.onsuccess = e => res(e.target.result || null);
+    req.onerror   = e => rej(e.target.error);
+  });
+}
+
+// ── Activación (una vez por dispositivo) ──
+async function activateInstallation(activationCode) {
+  const keyPair  = await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign']);
+  const rawPub   = await crypto.subtle.exportKey('raw', keyPair.publicKey);
+  const pubB64   = bufToB64url(rawPub);
+  const payload  = new TextEncoder().encode(
+    `exodus-installation-activation-v1:${activationCode}:${pubB64}`
+  );
+  const proofBuf = await crypto.subtle.sign('Ed25519', keyPair.privateKey, payload);
+
+  const resp = await fetch(`${GATEWAY_BASE}/v1/installations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      activation_code: activationCode,
+      public_key:      pubB64,
+      proof_signature: bufToB64url(proofBuf),
+      client_type:     'web',
+      label:           'MarranoTrak/' + (navigator.userAgent.split('/').pop() || 'web'),
+    }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Activación fallida (${resp.status})`);
+  }
+  const { installation_id } = await resp.json();
+  await idbSaveKey(keyPair.privateKey);
+  profile = { ...profile, installationId: installation_id };
+  localStorage.setItem('ct_profile', JSON.stringify(profile));
+  return installation_id;
+}
+
+// ── Nonce (pedir uno justo antes de cada request firmado) ──
+async function _fetchNonce(apiKey, installationId) {
+  const resp = await fetch(`${GATEWAY_BASE}/v1/installations/challenge`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ installation_id: installationId }),
+  });
+  if (!resp.ok) throw new Error(`challenge failed (${resp.status})`);
+  return (await resp.json()).nonce;
+}
+
+// ── Petición firmada RFC 9421 (ORDEN FIJO: created, keyid, nonce, alg, tag) ──
+async function _signedPost(path, bodyObj, apiKey, installationId, privateKey) {
+  const nonce      = await _fetchNonce(apiKey, installationId);
+  const bodyBytes  = new TextEncoder().encode(JSON.stringify(bodyObj));
+  const digestBuf  = await crypto.subtle.digest('SHA-256', bodyBytes);
+  const contentDigest = `sha-256=:${bufToB64(digestBuf)}:`;
+  const url        = new URL(path, GATEWAY_BASE);
+  const created    = Math.floor(Date.now() / 1000);
+  const components = ['@method', '@path', '@query', 'content-digest'];
+  const sigParamsValue =
+    `(${components.map(c => `"${c}"`).join(' ')})` +
+    `;created=${created};keyid="${installationId}";nonce="${nonce}";alg="ed25519";tag="exodus-gateway-v1"`;
+  const q    = url.search.startsWith('?') ? url.search.slice(1) : url.search;
+  const lines = [
+    `"@method": POST`,
+    `"@path": ${url.pathname}`,
+    `"@query": ${q ? '?' + q : '?'}`,
+    `"content-digest": ${contentDigest}`,
+    `"@signature-params": ${sigParamsValue}`,
+  ];
+  const sigBase = new TextEncoder().encode(lines.join('\n'));
+  const sigBuf  = await crypto.subtle.sign('Ed25519', privateKey, sigBase);
+
+  return fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${apiKey}`,
+      'Content-Type':    'application/json',
+      'Content-Digest':  contentDigest,
+      'Signature-Input': `exodus=${sigParamsValue}`,
+      'Signature':       `exodus=:${bufToB64(sigBuf)}:`,
+    },
+    body: bodyBytes,
+  });
+}
+
+// ── Punto de entrada central — usar este en toda la app ──
+async function gatewayPost(path, bodyObj) {
+  const apiKey = profile?.gatewayKey;
+  if (!apiKey) throw new Error('Configura la API key en Perfil → Acceso API');
+
+  const installationId = profile?.installationId;
+  const privateKey     = installationId ? await idbLoadKey() : null;
+
+  // Con instalación + private key: request firmado
+  if (installationId && privateKey) {
+    let resp = await _signedPost(path, bodyObj, apiKey, installationId, privateKey);
+    if (resp.status === 401) {
+      const err = await resp.json().catch(() => ({}));
+      if (err.error?.code === 'nonce_invalid') {
+        // Nonce ya consumido — pedir uno nuevo y reintentar UNA sola vez
+        resp = await _signedPost(path, bodyObj, apiKey, installationId, privateKey);
+      } else {
+        throw new Error(err.error?.message || 'Error 401');
+      }
+    }
+    return resp;
+  }
+
+  // Sin instalación activa: solo Bearer (require_signature debe estar OFF)
+  return fetch(`${GATEWAY_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(bodyObj),
+  });
 }
 
 // ════════════════════════════════════
@@ -935,10 +1098,7 @@ function saveSetup() {
   const age    = parseInt(document.getElementById('s-age').value)     || 30;
   const weight = parseFloat(document.getElementById('s-weight').value)|| 70;
   const height = parseInt(document.getElementById('s-height').value)  || 170;
-  const gatewayKey = document.getElementById('s-apikey').value.trim();
-  if (!gatewayKey) { toast('⚠️ Ingresa la key de acceso'); return; }
-
-  profile = { name, age, weight, height, gender: selGender, gatewayKey };
+  profile = { name, age, weight, height, gender: selGender };
   localStorage.setItem('ct_profile', JSON.stringify(profile));
 
   document.getElementById('main-nav').style.display = 'flex';
@@ -1406,7 +1566,7 @@ function checkSpeechSupport() {
 }
 
 function handleMic() {
-  if (!getGatewayKey()) { toast('⚠️ Gateway no configurado'); return; }
+  if (!profile?.gatewayKey) { toast('⚠️ Configura la API key en Perfil'); return; }
   if (isProcessing) return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { document.getElementById('voice-fallback').style.display = 'block'; return; }
@@ -1482,8 +1642,7 @@ function processTextFood() {
 }
 
 async function processFood(text) {
-  const apiKey = getGatewayKey();
-  if (!apiKey) { toast('⚠️ Gateway no configurado'); return; }
+  const apiKey = profile?.gatewayKey; // usado solo internamente en este bloque
   isProcessing = true;
 
   const micBtn    = document.getElementById('mic-btn');
@@ -1508,27 +1667,19 @@ Lo que comió: "${text}"
 Formato de respuesta (JSON puro):
 {"foods":[{"name":"nombre del alimento","portion":"cantidad exacta con unidad","calories":número,"protein":gramos_proteína}],"totalCalories":número,"totalProtein":número}`;
 
-    const gatewayBody = JSON.stringify({
+    const chatBody = {
       model: 'claude-haiku-4-5',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 1024
-    });
-    const gatewayHeaders = {
-      'Authorization': 'Bearer ' + apiKey,
-      'Content-Type': 'application/json'
     };
 
-    let res = await fetch('https://api.exodus-isar.tech/v1/chat', {
-      method: 'POST', headers: gatewayHeaders, body: gatewayBody
-    });
+    let res = await gatewayPost('/v1/chat', chatBody);
 
     // Reintento automático si rate-limit (429)
     if (res.status === 429) {
       micStatus.textContent = 'Límite alcanzado, reintentando...';
       await new Promise(r => setTimeout(r, 2500));
-      res = await fetch('https://api.exodus-isar.tech/v1/chat', {
-        method: 'POST', headers: gatewayHeaders, body: gatewayBody
-      });
+      res = await gatewayPost('/v1/chat', chatBody);
     }
 
     if (!res.ok) {
@@ -1818,10 +1969,12 @@ function renderProfile() {
   document.getElementById('p-age-in').value    = age;
   document.getElementById('p-weight-in').value = weight;
   document.getElementById('p-height-in').value = height;
-  document.getElementById('p-apikey').value    = profile.gatewayKey || '';
+  const apikeyEl = document.getElementById('p-apikey');
+  if (apikeyEl) apikeyEl.value = profile.gatewayKey || '';
   selPGender = gender;
   document.getElementById('pg-male').classList.toggle('sel',   gender === 'male');
   document.getElementById('pg-female').classList.toggle('sel', gender === 'female');
+  renderInstallationStatus();
 }
 
 function selectPGender(g) {
@@ -1847,6 +2000,45 @@ function saveGatewayKey() {
   profile = { ...profile, gatewayKey: key };
   localStorage.setItem('ct_profile', JSON.stringify(profile));
   toast('✓ Key guardada');
+}
+
+async function doActivate() {
+  const code = document.getElementById('p-actcode').value.trim();
+  if (!code) { toast('⚠️ Ingresa el código de activación'); return; }
+  const btn = document.getElementById('act-btn');
+  btn.textContent = 'Activando...';
+  btn.disabled    = true;
+  try {
+    await activateInstallation(code);
+    document.getElementById('p-actcode').value = '';
+    renderInstallationStatus();
+    toast('✓ Dispositivo activado');
+  } catch(e) {
+    toast('✗ ' + e.message);
+  } finally {
+    btn.textContent = 'Activar dispositivo';
+    btn.disabled    = false;
+  }
+}
+
+function renderInstallationStatus() {
+  const badge = document.getElementById('inst-status-badge');
+  const fg    = document.getElementById('act-form-group');
+  const btn   = document.getElementById('act-btn');
+  if (!badge) return;
+  if (profile?.installationId) {
+    badge.style.background = 'var(--ge)';
+    badge.style.color      = 'var(--gb)';
+    badge.textContent      = '✓ activo';
+    if (fg)  fg.style.display  = 'none';
+    if (btn) btn.textContent   = 'Reactivar';
+  } else {
+    badge.style.background = 'var(--bg3)';
+    badge.style.color      = 'var(--text2)';
+    badge.textContent      = 'sin activar';
+    if (fg)  fg.style.display  = '';
+    if (btn) btn.textContent   = 'Activar dispositivo';
+  }
 }
 
 // ════════════════════════════════════
